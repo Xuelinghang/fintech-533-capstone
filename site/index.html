@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pair Trading Across 10 Industries &mdash; FinTech 533 Capstone</title>
+  <meta name="author" content="Peiyuan Shan, Linghang Xue, Supawich Puengdang" />
+  <meta name="description" content="A statistical pair-trading strategy across 10 US equity industries. FinTech 533 Capstone." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body id="top">
+  <button id="menu-toggle" class="menu-toggle" aria-label="Open navigation">&#9776; Sections</button>
+  <div class="layout">
+    <aside class="sidebar" aria-label="Section navigation">
+  <h1><a href="#top" style="color:inherit">Pair Trading Across 10 Industries</a></h1>
+  <div class="subtitle">FinTech 533 Capstone</div>
+  <div class="authors">
+    <strong>Authors</strong>
+    Peiyuan Shan<br>Linghang Xue<br>Supawich Puengdang
+  </div>
+  <nav>
+    <ol>
+      <li><a href="#01_strategy_overview"><span class="num">01.</span>Strategy Overview</a></li>
+      <li><a href="#02_market_phenomenon"><span class="num">02.</span>Market Phenomenon</a></li>
+      <li><a href="#03_industry_universe"><span class="num">03.</span>Industry Universe & Pair Selection</a></li>
+      <li><a href="#04_statistical_tests"><span class="num">04.</span>Statistical Tests</a></li>
+      <li><a href="#05_hedge_ratio_and_spread"><span class="num">05.</span>Hedge Ratio & Spread</a></li>
+      <li><a href="#06_entry_rules"><span class="num">06.</span>Entry Rules</a></li>
+      <li><a href="#07_exit_rules"><span class="num">07.</span>Exit Rules</a></li>
+      <li><a href="#08_trade_fates"><span class="num">08.</span>Trade Fates</a></li>
+      <li><a href="#09_backtest_design"><span class="num">09.</span>Backtest Design</a></li>
+      <li><a href="#10_blotter_and_ledger"><span class="num">10.</span>Blotter & Ledger</a></li>
+      <li><a href="#11_performance_metrics"><span class="num">11.</span>Performance Metrics</a></li>
+      <li><a href="#12_strategy_monitoring"><span class="num">12.</span>Strategy Monitoring</a></li>
+      <li><a href="#13_when_strategy_stops_working"><span class="num">13.</span>When the Strategy Stops Working</a></li>
+    </ol>
+  </nav>
+  <div class="top-link"><a href="#top">&uarr; Back to top</a></div>
+</aside>
+    <main>
+      <div class="content">
+        
+<div class="hero">
+  <h1>Pair Trading Across 10 Industries</h1>
+  <p class="lede">
+    A statistical pair-trading strategy applied to ten US equity industries.
+    We screen 386 candidate pairs by correlation, Engle&ndash;Granger cointegration,
+    and ADF on the spread, then backtest a Z-score-driven entry/exit rule with
+    stop-loss and timeout over three years of Interactive Brokers data.
+  </p>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="label">Backtest window</div><div class="value">2023&ndash;2026</div></div>
+    <div class="kpi"><div class="label">Stocks fetched</div><div class="value">92 / 96</div></div>
+    <div class="kpi"><div class="label">Pairs screened</div><div class="value">386</div></div>
+    <div class="kpi"><div class="label">Pairs selected</div><div class="value">3</div></div>
+    <div class="kpi"><div class="label">Trades</div><div class="value">68</div></div>
+    <div class="kpi"><div class="label">Sharpe</div><div class="value">1.45</div></div>
+    <div class="kpi"><div class="label">Total return</div><div class="value">+3.92%</div></div>
+    <div class="kpi"><div class="label">Max drawdown</div><div class="value">&minus;0.85%</div></div>
+  </div>
+</div>
+
+<section class="doc-section" id="01_strategy_overview">
+  <h1 class="section-title">01. Strategy Overview</h1>
+  <p>This project implements a statistical pair-trading strategy across 10 GICS-style
+US equity industries. The strategy looks for two stocks in the same industry whose
+prices have moved together historically, identifies them with formal statistical
+tests, and then trades the <strong>spread</strong> between them whenever it deviates far from
+its historical mean.</p>
+<p>The trading hypothesis is simple: when two economically similar stocks share a
+<strong>stable long-run relationship</strong> (cointegration), short-term dislocations in
+their relative price tend to revert. We enter when the spread is unusually wide,
+exit when it reverts toward the mean, and stop out if the relationship appears
+to break.</p>
+<h2>Pipeline</h2>
+<p>The end-to-end workflow proceeds in seven stages:</p>
+<ol>
+<li>Define ten industries and assemble a candidate stock pool of roughly ten
+   stocks each, for a total of 96 tickers.</li>
+<li>Pull three years of historical daily bars for each ticker from Interactive
+   Brokers.</li>
+<li>For every pair within an industry, compute four statistics: daily-return
+   correlation, Engle-Granger cointegration p-value on log prices, OLS hedge
+   ratio, and an ADF p-value on the constructed spread.</li>
+<li>Rank the pairs and select the best one per industry, subject to the
+   statistical thresholds.</li>
+<li>Run the Z-score backtest (entry at ±2, success exit at |Z| &lt; 0.5, stop-loss
+   at |Z| &gt; 3, timeout at 20 trading days).</li>
+<li>Produce the blotter (<code>trades.csv</code>) and the daily ledger (<code>ledger.csv</code>).</li>
+<li>Compute the performance metrics that drive the dashboards in the later
+   sections.</li>
+</ol>
+<h2>Backtest Window</h2>
+<ul>
+<li>Start: 2023-05-02</li>
+<li>End: 2026-04-30</li>
+<li>Bars per stock: 752 daily bars</li>
+<li>Data source: Interactive Brokers (TWS API via <code>shinybroker</code>)</li>
+</ul>
+<h2>High-Level Result</h2>
+<p>Out of 386 candidate pairs across 10 industries, <strong>3 pairs</strong> met the strict
+selection thresholds (correlation ≥ 0.50, cointegration p ≤ 0.10, ADF p ≤ 0.10):</p>
+<table>
+<thead>
+<tr>
+<th>Industry</th>
+<th>Selected Pair</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Banks</td>
+<td>PNC / TFC</td>
+</tr>
+<tr>
+<td>Energy</td>
+<td>COP / OXY</td>
+</tr>
+<tr>
+<td>Semiconductors</td>
+<td>MU / LRCX</td>
+</tr>
+</tbody>
+</table>
+<p>The remaining 7 industries did not contain any pair that satisfied all three
+statistical thresholds during this backtest window.</p>
+<p>Aggregate backtest performance (3 selected pairs, equal-notional):</p>
+<ul>
+<li>68 round-trip trades</li>
+<li>Sharpe ratio: 1.45</li>
+<li>Total return: 3.92%</li>
+<li>Max drawdown: -0.85%</li>
+<li>Success rate: 45.6%, stop-loss rate: 38.2%, timeout rate: 16.2%</li>
+</ul>
+</section>
+<section class="doc-section" id="02_market_phenomenon">
+  <h1 class="section-title">02. Market Phenomenon</h1>
+  <h2>What we are trying to capture</h2>
+<p>This strategy attempts to profit from temporary relative mispricing between two
+economically similar stocks in the same industry. If two stocks have historically
+moved together and the spread between their prices is statistically stationary,
+then large deviations from the historical average represent <strong>temporary
+dislocations</strong> rather than a permanent change in fundamentals. The strategy
+enters when the spread becomes unusually wide and exits when the spread reverts
+toward its mean.</p>
+<h2>Why this happens</h2>
+<p>Stocks within the same industry are exposed to the same macro factors:
+sector-wide demand shocks, regulation, commodity inputs, the broader market.
+When investors react to firm-specific news (an earnings surprise, an analyst
+upgrade, an executive change), the relative prices of two otherwise similar
+companies can drift apart even though their long-run cash flows remain coupled.
+That short-term divergence is what creates the trading opportunity.</p>
+<h2>What the strategy does NOT assume</h2>
+<ul>
+<li>It does not assume the two stocks have the same price level.</li>
+<li>It does not assume the two stocks have the same volatility.</li>
+<li>It does not assume markets are inefficient on average.</li>
+<li>It only assumes that, conditional on having passed the cointegration test,
+  the spread has a tendency to revert during the backtest horizon.</li>
+</ul>
+<h2>Risk: when the assumption fails</h2>
+<p>A pair can stop being cointegrated. M&amp;A activity, a major change in business
+mix, a regulatory shock that hits one firm but not the other, or simply a
+structural break in the relationship can make the spread non-stationary. When
+that happens, the strategy will keep entering trades that no longer revert,
+which is what the stop-loss and the live monitoring rules in section 16 are
+designed to detect.</p>
+</section>
+<section class="doc-section" id="03_industry_universe">
+  <h1 class="section-title">03. Industry Universe & Pair Selection</h1>
+  <h2>3.1 Why these 10 industries</h2>
+<p>The 10 industries are chosen to cover a broad cross-section of the US equity
+market based on the GICS sector framework (S&amp;P/MSCI). Within each industry the
+candidate pool is filled with large-cap, liquid names that share business model
+and demand drivers, which is the precondition that makes a stable long-run
+spread plausible.</p>
+<h2>3.2 Candidate stock universe (96 tickers)</h2>
+<table>
+<thead>
+<tr>
+<th>Industry</th>
+<th>Candidate stocks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Beverages</td>
+<td>KO, PEP, MNST, KDP, STZ, TAP, CELH, FIZZ</td>
+</tr>
+<tr>
+<td>Payments</td>
+<td>V, MA, AXP, PYPL, FIS, FI, GPN, DFS</td>
+</tr>
+<tr>
+<td>Energy</td>
+<td>XOM, CVX, COP, EOG, SLB, OXY, PSX, MPC, VLO, HAL</td>
+</tr>
+<tr>
+<td>Semiconductors</td>
+<td>NVDA, AMD, INTC, AVGO, QCOM, TXN, MU, AMAT, LRCX, KLAC</td>
+</tr>
+<tr>
+<td>Airlines</td>
+<td>DAL, UAL, AAL, LUV, ALK, JBLU, CPA, RYAAY, SAVE, HA</td>
+</tr>
+<tr>
+<td>Banks</td>
+<td>JPM, BAC, C, WFC, GS, MS, USB, PNC, TFC, BK</td>
+</tr>
+<tr>
+<td>Retail</td>
+<td>WMT, TGT, COST, DG, DLTR, KR, HD, LOW, TJX, ROST</td>
+</tr>
+<tr>
+<td>Autos</td>
+<td>TSLA, F, GM, RIVN, LCID, TM, HMC, STLA, NIO, XPEV</td>
+</tr>
+<tr>
+<td>Health Care</td>
+<td>JNJ, PFE, MRK, ABBV, LLY, BMY, GILD, AMGN, REGN, BIIB</td>
+</tr>
+<tr>
+<td>Communication</td>
+<td>GOOGL, META, NFLX, DIS, CMCSA, T, VZ, TMUS, SNAP, PINS</td>
+</tr>
+</tbody>
+</table>
+<p>Of these 96 candidates, <strong>92</strong> returned valid 3-year daily bars from IBKR.
+4 tickers were excluded because the contract did not resolve on TWS during the
+fetch window (<code>FI</code>, <code>DFS</code>, <code>SAVE</code>, <code>HA</code>).</p>
+<h2>3.3 Selection process</h2>
+<p>For every distinct pair within each industry, we compute four statistics:</p>
+<ol>
+<li>Daily return correlation</li>
+<li>Engle-Granger cointegration p-value (on log prices)</li>
+<li>OLS hedge ratio (slope of <code>log(A) ~ log(B)</code>)</li>
+<li>Augmented Dickey-Fuller p-value on the spread</li>
+</ol>
+<p>We then rank candidates within each industry using a composite score and pick
+the top pair. A pair is <strong>selected</strong> for trading only if it passes all three
+statistical thresholds simultaneously: correlation of at least 0.50,
+cointegration p-value of at most 0.10, and ADF p-value of at most 0.10 on
+the constructed spread.</p>
+<p>If a top-ranked pair fails the threshold, it is <strong>rejected</strong> and that industry
+contributes no pair to the live strategy. This is intentional: we would rather
+trade fewer pairs with strong statistical support than force a pair from every
+industry.</p>
+</section>
+<section class="doc-section" id="04_statistical_tests">
+  <h1 class="section-title">04. Statistical Tests</h1>
+  <p>Three statistical tests are run on every candidate pair. The tests are
+deliberately layered so that a passing pair shows evidence of (a) a contemporaneous
+relationship, (b) a stable long-run relationship, and (c) mean-reverting
+short-term deviations.</p>
+<h2>4.1 Daily return correlation (quick screen)</h2>
+<p>Pairs trading requires both stocks to respond to similar shocks; otherwise the
+spread is just two unrelated random walks. A simple Pearson correlation on
+daily returns is fast and gives us a first cut. We require a correlation of at
+least <strong>0.50</strong>.</p>
+<p>Correlation alone is <strong>not sufficient</strong>: two stocks can be highly correlated in
+returns while having a non-stationary spread (a permanently widening or
+narrowing relationship). That is why the next two tests matter more.</p>
+<h2>4.2 Engle-Granger cointegration test</h2>
+<p>We run <code>statsmodels.tsa.stattools.coint</code> on the <strong>log prices</strong> of each pair.
+The null hypothesis is "no cointegration." A small p-value indicates that the
+two log-price series share a stable long-run relationship - the residual from
+their linear combination is stationary.</p>
+<p>Selection rule: cointegration p-value of at most <strong>0.10</strong>.</p>
+<p>The plan ideally wants p &lt; 0.05. We loosen to 0.10 because 0.05 leaves too few
+qualifying pairs in this 3-year window; 0.10 gives a slightly noisier but still
+defensible signal.</p>
+<h2>4.3 ADF test on the spread</h2>
+<p>After computing the spread (section 5), we run an Augmented Dickey-Fuller test
+on the spread itself. The null is "spread has a unit root" (non-stationary,
+random walk). A small p-value means the spread is stationary - exactly the
+condition the strategy needs.</p>
+<p>Selection rule: ADF p-value of at most <strong>0.10</strong>.</p>
+<p>In practice, ADF and cointegration tend to agree. The combined test acts as a
+cross-check.</p>
+<h2>4.4 Combined ranking score</h2>
+<p>For pairs that pass all three filters, we compute a composite score
+<code>score = z(correlation) − z(cointegration_p) − z(ADF_p)</code>, where <code>z(·)</code>
+standardizes each statistic across all candidate pairs. Higher
+correlation pushes the score up, lower p-values push the score up. The top-
+scoring pair within each industry is the one we report.</p>
+<h2>4.5 Why we do not use only correlation</h2>
+<p>A pair like <code>V / MA</code> has a daily-return correlation of 0.85 - extremely high -
+but its cointegration p-value is 0.24, so it does not pass the cointegration
+test. The two stocks move together day-to-day, but their long-run spread is
+not stationary in the test window. Trading the spread of such a pair would be
+exposed to permanent drift, which is exactly what the cointegration test is
+designed to filter out.</p>
+</section>
+<section class="doc-section" id="05_hedge_ratio_and_spread">
+  <h1 class="section-title">05. Hedge Ratio & Spread</h1>
+  <h2>5.1 Hedge ratio via OLS on log prices</h2>
+<p>For each pair (A, B), the hedge ratio is the slope of an ordinary least squares
+regression of <code>log(price_A)</code> on <code>log(price_B)</code>, i.e.
+<code>log(price_A) = α + β · log(price_B) + ε</code>.</p>
+<p><code>β</code> is the <strong>hedge ratio</strong>: how many units of stock B are needed to hedge
+one unit of stock A in the constructed spread.</p>
+<p>We use <strong>log prices</strong>, not raw prices, for two reasons:</p>
+<ol>
+<li>Log returns are roughly symmetric and approximately constant in magnitude,
+   so the regression is less sensitive to absolute price levels (KO at $80 vs.
+   PEP at $145 in this sample).</li>
+<li>Cointegration in log space corresponds to a stable price ratio, which is
+   the economically meaningful relationship for two similar firms.</li>
+</ol>
+<h2>5.2 Spread definition</h2>
+<p>The spread on day <em>t</em> is defined as
+<code>spread_t = log(price_A_t) − hedge_ratio · log(price_B_t)</code>.</p>
+<p>If A and B are cointegrated, this spread is approximately stationary. The
+backtest then standardizes it via a rolling Z-score (section 6).</p>
+<h2>5.3 Hedge ratios estimated for the 3 selected pairs</h2>
+<table>
+<thead>
+<tr>
+<th>Industry</th>
+<th>Pair</th>
+<th>Hedge Ratio (β)</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Banks</td>
+<td>PNC / TFC</td>
+<td>1.121</td>
+<td>1 unit of log(PNC) hedged by 1.12 units of log(TFC)</td>
+</tr>
+<tr>
+<td>Energy</td>
+<td>COP / OXY</td>
+<td>0.634</td>
+<td>1 unit of log(COP) hedged by 0.63 units of log(OXY)</td>
+</tr>
+<tr>
+<td>Semiconductors</td>
+<td>MU / LRCX</td>
+<td>1.343</td>
+<td>1 unit of log(MU) hedged by 1.34 units of log(LRCX)</td>
+</tr>
+</tbody>
+</table>
+<h2>5.4 Hedge ratio in the trading book</h2>
+<p>When sizing positions, the hedge ratio determines the relative dollar exposure
+on the two legs. We commit $10,000 of notional to stock A, which means
+<code>shares_A = 10000 / price_A</code>. The opposite leg uses $10,000 scaled by
+<code>|beta|</code>, so <code>shares_B = (10000 * |beta|) / price_B</code>.</p>
+<p>This keeps the spread position approximately neutral with respect to the common
+factor that drives both stocks. Both legs round to the nearest whole share; any
+small remaining residual exposure is recorded in the ledger and absorbed into
+the cash account.</p>
+</section>
+<section class="doc-section" id="06_entry_rules">
+  <h1 class="section-title">06. Entry Rules</h1>
+  <h2>6.1 Z-score signal</h2>
+<p>Every trading day, we compute a rolling Z-score of the spread. Let <code>μ_t</code> be
+the rolling mean of the spread over the last 60 trading days, and <code>σ_t</code> be
+the rolling standard deviation over the same window. The Z-score is then
+<code>Z_t = (spread_t − μ_t) / σ_t</code>.</p>
+<h2>6.2 Why a 60-day rolling window</h2>
+<p>A 60-day window is approximately three months of trading data. It is long
+enough to give a stable estimate of the spread's local mean and standard
+deviation, but short enough to adapt when market conditions change. A shorter
+window (e.g. 20 days) was rejected because it produces a noisy Z-score that
+generates whipsaw trades; a longer window (e.g. 252 days) was rejected because
+it reacts too slowly to regime shifts.</p>
+<h2>6.3 Entry rule</h2>
+<p>When the Z-score exceeds <strong>+2.0</strong>, the spread is unusually wide and we enter a
+<strong>short spread</strong> position: short stock A and go long stock B with a size
+determined by the hedge ratio. When the Z-score falls below <strong>−2.0</strong>, the
+spread is unusually narrow and we enter a <strong>long spread</strong> position: long stock
+A and short stock B. Between −2.0 and +2.0 we take no new position.</p>
+<p>Only one position per pair is open at a time. If the strategy already has an
+open position on a pair, no new entry is taken for that pair until the existing
+trade is closed.</p>
+<h2>6.4 Why ±2 standard deviations</h2>
+<p>The ±2 threshold filters out normal daily noise: under a roughly normal
+distribution, only about 5% of daily Z-scores would be expected to exceed ±2,
+so this is a meaningful deviation rather than an ordinary fluctuation. Trying
+±1 would generate too many marginal trades; trying ±3 would generate almost
+none. The 2-sigma threshold is the standard choice in academic and practitioner
+references.</p>
+<h2>6.5 Sizing</h2>
+<p>Entries are sized to <strong>$10,000 of notional on each leg</strong>, scaled by the hedge
+ratio. In other words, <code>shares_A = floor(10000 / price_A)</code> and
+<code>shares_B = floor(10000 * |hedge_ratio| / price_B)</code>.</p>
+<p>This produces a roughly dollar-neutral spread position. With a starting cash
+of $100,000 and three concurrent pairs, peak exposure is bounded.</p>
+</section>
+<section class="doc-section" id="07_exit_rules">
+  <h1 class="section-title">07. Exit Rules</h1>
+  <p>A trade can exit through one of four channels. Each is checked once per day
+in this order: success, stop-loss, timeout, end-of-data.</p>
+<h2>7.1 Success exit (mean reversion)</h2>
+<p>When the absolute Z-score drops below <strong>0.5</strong>, the position is closed and
+tagged with the fate <code>success</code>.</p>
+<p>We exit when the spread mostly reverts toward its mean. We use 0.5 instead of
+exactly 0 because waiting for the spread to return to <em>exactly</em> zero often
+means giving back already-realized profit. 0.5 captures most of the reversion
+while leaving a small buffer.</p>
+<h2>7.2 Stop-loss exit</h2>
+<p>When the absolute Z-score exceeds <strong>3.0</strong>, the position is closed and tagged
+with the fate <code>stop_loss</code>.</p>
+<p>A stop-loss is triggered when the spread has continued moving against the
+trade beyond 3 standard deviations. At this point the historical spread
+distribution no longer supports the trade, and the more likely explanation is
+that the underlying relationship has shifted.</p>
+<h2>7.3 Timeout exit</h2>
+<p>If a position has been open for <strong>20 trading days</strong> without hitting either of
+the two exits above, it is closed and tagged with the fate <code>timeout</code>.</p>
+<p>Pair trading is a short- to medium-term mean-reversion strategy. If the spread
+has not reverted within roughly one trading month, it is more likely to be
+trending than reverting, and the original statistical edge has expired. Closing
+the position frees capital for a fresher signal.</p>
+<h2>7.4 End-of-data close</h2>
+<p>If a trade is still open on the last day of the backtest, it is closed at that
+day's price and tagged with the fate <code>end_close</code>. This is a bookkeeping rule
+for the backtest, not a live trading rule — in production the position would
+simply remain open into the next session.</p>
+<h2>7.5 Realized fate distribution (3 selected pairs, full backtest)</h2>
+<table>
+<thead>
+<tr>
+<th>Fate</th>
+<th>Trades</th>
+<th>Share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>success</td>
+<td>31</td>
+<td>45.6%</td>
+</tr>
+<tr>
+<td>stop_loss</td>
+<td>26</td>
+<td>38.2%</td>
+</tr>
+<tr>
+<td>timeout</td>
+<td>11</td>
+<td>16.2%</td>
+</tr>
+<tr>
+<td>end_close</td>
+<td>0</td>
+<td>0.0%</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>68</strong></td>
+<td>100%</td>
+</tr>
+</tbody>
+</table>
+<p>Roughly half of trades exit cleanly via mean reversion; about 38% are stopped
+out. Stop-loss frequency is something we monitor closely - a sustained rise in
+that rate is one of the early warning signals described in section 16.</p>
+</section>
+<section class="doc-section" id="08_trade_fates">
+  <h1 class="section-title">08. Trade Fates</h1>
+  <p>Every closed trade in <code>trades.csv</code> is tagged with exactly one of four fates.
+This makes downstream attribution and live monitoring straightforward.</p>
+<table>
+<thead>
+<tr>
+<th>Fate</th>
+<th>Trigger</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>success</code></td>
+<td>abs(Z) drops below 0.5</td>
+<td>Spread reverted as predicted - the strategy worked.</td>
+</tr>
+<tr>
+<td><code>stop_loss</code></td>
+<td>abs(Z) exceeds 3.0</td>
+<td>Spread continued in the wrong direction - relationship may have broken.</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>Position held 20 trading days without success or stop-loss</td>
+<td>Spread drifted sideways - signal expired without resolving.</td>
+</tr>
+<tr>
+<td><code>end_close</code></td>
+<td>Backtest ended while position was still open</td>
+<td>Bookkeeping. Not a real fate in live trading.</td>
+</tr>
+</tbody>
+</table>
+<h2>Realized counts (3 selected pairs, 2023-05 to 2026-04)</h2>
+<table>
+<thead>
+<tr>
+<th>Industry</th>
+<th>Pair</th>
+<th style="text-align: right;">n_trades</th>
+<th style="text-align: right;">success</th>
+<th style="text-align: right;">stop_loss</th>
+<th style="text-align: right;">timeout</th>
+<th style="text-align: right;">end_close</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Banks</td>
+<td>PNC / TFC</td>
+<td style="text-align: right;">20</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>Energy</td>
+<td>COP / OXY</td>
+<td style="text-align: right;">22</td>
+<td style="text-align: right;">11</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>Semiconductors</td>
+<td>MU / LRCX</td>
+<td style="text-align: right;">26</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">14</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td></td>
+<td style="text-align: right;"><strong>68</strong></td>
+<td style="text-align: right;"><strong>31</strong></td>
+<td style="text-align: right;"><strong>26</strong></td>
+<td style="text-align: right;"><strong>11</strong></td>
+<td style="text-align: right;"><strong>0</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>MU / LRCX</code> shows the highest stop-loss share (54%) - the spread had a few
+strong directional moves during the semiconductor cycle that were not absorbed
+by the rolling Z-score window. Its overall contribution to portfolio P&amp;L is
+still positive thanks to the favorable success-trade payoff distribution, but
+this pair is the one most likely to be re-screened first under the live
+monitoring rules in section 16.</p>
+<p>See <code>outputs/trades.csv</code> for the full per-trade record.</p>
+<h2>Why we report fate distribution explicitly</h2>
+<p>Two strategies with the same Sharpe ratio can have very different fate
+distributions, and they age very differently in production:</p>
+<ul>
+<li>A strategy with high success rate and low stop-loss rate is "comfortable"
+  and tends to be stable.</li>
+<li>A strategy with comparable returns achieved through frequent stop-losses is
+  taking on path risk - the realized P&amp;L distribution has fatter tails and the
+  strategy is more sensitive to slippage and transaction costs.</li>
+<li>A strategy dominated by timeouts is generating signals the market is not
+  resolving - this typically means the spread has lost its mean-reverting
+  character and the strategy may need to be re-screened.</li>
+</ul>
+<p>We therefore monitor success / stop-loss / timeout shares as primary live
+diagnostics, alongside Sharpe and drawdown.</p>
+</section>
+<section class="doc-section" id="09_backtest_design">
+  <h1 class="section-title">09. Backtest Design</h1>
+  <h2>9.1 Architecture</h2>
+<p>The backtest is <strong>event-driven</strong> and runs day by day. For each pair and each
+day, the engine performs three steps in order:</p>
+<ol>
+<li><strong>Manage any open trade.</strong> Read the current Z-score and close the position
+   if it has reverted (success), gone too far against us (stop-loss), or aged
+   out (timeout). On the final day of the backtest, any still-open trade is
+   closed at that day's price.</li>
+<li><strong>Check for an entry.</strong> If no trade is open and the Z-score is beyond ±2.0,
+   open a long-spread or short-spread position accordingly.</li>
+<li><strong>Record a ledger row</strong> capturing the date, prices, positions, cash,
+   portfolio value, current Z-score, and any open trade identifier.</li>
+</ol>
+<p>Exits are evaluated before entries on the same day, so a trade can only be
+opened on a day when no other position is active for that pair.</p>
+<h2>9.2 Inputs</h2>
+<ul>
+<li>Daily close prices for the 92 successfully-fetched tickers.</li>
+<li>Date-aligned price panel via inner-join on dates.</li>
+<li>Hedge ratio per pair from OLS on log prices.</li>
+<li>The 3 selected pairs from the screening step.</li>
+</ul>
+<h2>9.3 Capital and sizing</h2>
+<ul>
+<li>Starting cash per pair: <strong>$100,000</strong> (each pair has an independent ledger
+  account in this implementation).</li>
+<li>Notional per leg per trade: <strong>$10,000</strong>, scaled by hedge ratio on stock B.</li>
+<li>Cash account: tracks proceeds and outlays, and pays the residual P&amp;L on
+  close.</li>
+<li>No margin, no commissions, no slippage are modelled. These are conservative
+  simplifications - in production they would be added at the trade level.</li>
+</ul>
+<h2>9.4 Outputs</h2>
+<p>The backtest produces three artifacts in <code>outputs/</code>:</p>
+<ol>
+<li><code>trades.csv</code> - one row per closed trade (the <strong>blotter</strong>).</li>
+<li><code>ledger.csv</code> - one row per trading day per pair (the <strong>daily ledger</strong>).</li>
+<li><code>summary.json</code> - aggregate trade and portfolio metrics.</li>
+</ol>
+<p>The screening step also produces:</p>
+<ol start="4">
+<li><code>screening_all_pairs.csv</code> - all pairwise statistics, all industries.</li>
+<li><code>screening_ranked.csv</code> - same data, ranked by composite score.</li>
+<li><code>best_per_industry.csv</code> - the top-scored pair per industry with the
+   selected/rejected decision (10 rows).</li>
+<li><code>selected_pairs.csv</code> - the subset of <code>best_per_industry</code> that actually
+   entered the backtest.</li>
+</ol>
+<h2>9.5 What is intentionally NOT modelled</h2>
+<ul>
+<li>Intraday execution (we use daily closes only).</li>
+<li>Borrow cost on the short leg.</li>
+<li>Dividends, splits, and other corporate actions (the IBKR <code>TRADES</code> series
+  used here is unadjusted; the impact on a 3-year window with all listed
+  large caps is small but non-zero).</li>
+<li>Slippage and bid-ask spread.</li>
+<li>Capital constraints across pairs (each pair is treated as an independent
+  $100k book).</li>
+</ul>
+<p>These omissions make the reported Sharpe a slight overstatement relative to
+what a live deployment would realize. The relative ranking of pairs and the
+qualitative shape of the equity curve are unaffected.</p>
+</section>
+<section class="doc-section" id="10_blotter_and_ledger">
+  <h1 class="section-title">10. Blotter & Ledger</h1>
+  <p>The backtest writes two CSVs that together fully reconstruct the strategy's
+behavior over the test window.</p>
+<h2>10.1 <code>trades.csv</code> — the blotter (one row per closed trade)</h2>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trade_id</code></td>
+<td>int</td>
+<td>Sequential trade identifier across the run</td>
+</tr>
+<tr>
+<td><code>pair</code></td>
+<td>string</td>
+<td>e.g. <code>PNC/TFC</code></td>
+</tr>
+<tr>
+<td><code>industry</code></td>
+<td>string</td>
+<td>Industry tag</td>
+</tr>
+<tr>
+<td><code>entry_date</code></td>
+<td>date</td>
+<td>Day the position was opened</td>
+</tr>
+<tr>
+<td><code>exit_date</code></td>
+<td>date</td>
+<td>Day the position was closed</td>
+</tr>
+<tr>
+<td><code>direction</code></td>
+<td>string</td>
+<td><code>long_spread</code> or <code>short_spread</code></td>
+</tr>
+<tr>
+<td><code>entry_z</code></td>
+<td>float</td>
+<td>Z-score at entry</td>
+</tr>
+<tr>
+<td><code>exit_z</code></td>
+<td>float</td>
+<td>Z-score at exit</td>
+</tr>
+<tr>
+<td><code>hedge_ratio</code></td>
+<td>float</td>
+<td>Hedge ratio used at entry</td>
+</tr>
+<tr>
+<td><code>entry_price_A</code></td>
+<td>float</td>
+<td>Stock A close on entry day</td>
+</tr>
+<tr>
+<td><code>entry_price_B</code></td>
+<td>float</td>
+<td>Stock B close on entry day</td>
+</tr>
+<tr>
+<td><code>exit_price_A</code></td>
+<td>float</td>
+<td>Stock A close on exit day</td>
+</tr>
+<tr>
+<td><code>exit_price_B</code></td>
+<td>float</td>
+<td>Stock B close on exit day</td>
+</tr>
+<tr>
+<td><code>shares_A</code></td>
+<td>int</td>
+<td>Signed share count for stock A (&gt;0 long, &lt;0 short)</td>
+</tr>
+<tr>
+<td><code>shares_B</code></td>
+<td>int</td>
+<td>Signed share count for stock B</td>
+</tr>
+<tr>
+<td><code>pnl</code></td>
+<td>float</td>
+<td>Realized dollar P&amp;L on the trade</td>
+</tr>
+<tr>
+<td><code>return_pct</code></td>
+<td>float</td>
+<td>P&amp;L divided by gross entry cost</td>
+</tr>
+<tr>
+<td><code>holding_days</code></td>
+<td>int</td>
+<td>Days the trade was open</td>
+</tr>
+<tr>
+<td><code>fate</code></td>
+<td>string</td>
+<td><code>success</code>, <code>stop_loss</code>, <code>timeout</code>, or <code>end_close</code></td>
+</tr>
+</tbody>
+</table>
+<h2>10.2 <code>ledger.csv</code> — the daily ledger (one row per pair per day)</h2>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>date</code></td>
+<td>date</td>
+<td>Trading day</td>
+</tr>
+<tr>
+<td><code>pair</code></td>
+<td>string</td>
+<td>Pair this row belongs to</td>
+</tr>
+<tr>
+<td><code>industry</code></td>
+<td>string</td>
+<td>Industry tag</td>
+</tr>
+<tr>
+<td><code>position_A</code></td>
+<td>int</td>
+<td>Current signed shares of A (0 if flat)</td>
+</tr>
+<tr>
+<td><code>position_B</code></td>
+<td>int</td>
+<td>Current signed shares of B (0 if flat)</td>
+</tr>
+<tr>
+<td><code>price_A</code></td>
+<td>float</td>
+<td>Daily close of A</td>
+</tr>
+<tr>
+<td><code>price_B</code></td>
+<td>float</td>
+<td>Daily close of B</td>
+</tr>
+<tr>
+<td><code>cash</code></td>
+<td>float</td>
+<td>Pair's cash balance after entries/exits</td>
+</tr>
+<tr>
+<td><code>portfolio_value</code></td>
+<td>float</td>
+<td><code>cash + position_A * price_A + position_B * price_B</code></td>
+</tr>
+<tr>
+<td><code>daily_pnl</code></td>
+<td>float</td>
+<td>Day-over-day change in <code>portfolio_value</code></td>
+</tr>
+<tr>
+<td><code>daily_return</code></td>
+<td>float</td>
+<td><code>daily_pnl / prev portfolio_value</code></td>
+</tr>
+<tr>
+<td><code>zscore</code></td>
+<td>float</td>
+<td>Spread Z-score on this day (NaN until 60-day window fills)</td>
+</tr>
+<tr>
+<td><code>open_trade_id</code></td>
+<td>int</td>
+<td><code>trade_id</code> if a position is open, else NaN</td>
+</tr>
+</tbody>
+</table>
+<h2>10.3 Reconciliation</h2>
+<p>A trade row in <code>trades.csv</code> and the daily ledger rows in <code>ledger.csv</code> are
+linked by <code>trade_id</code> / <code>open_trade_id</code>. Specifically:</p>
+<ul>
+<li>The set of ledger rows where <code>open_trade_id == k</code> covers exactly the days
+  from <code>entry_date</code> through <code>exit_date - 1</code> for trade <code>k</code> (the exit-day P&amp;L
+  is realized into cash on the exit day itself).</li>
+<li>Summing <code>daily_pnl</code> over those rows reproduces the trade's <code>pnl</code> up to
+  rounding.</li>
+</ul>
+<h2>10.4 Sample record (illustrative)</h2>
+<p>A successful entry-and-exit on PNC / TFC might appear in the blotter as:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trade_id</code></td>
+<td>12</td>
+<td></td>
+</tr>
+<tr>
+<td><code>pair</code></td>
+<td>PNC/TFC</td>
+<td></td>
+</tr>
+<tr>
+<td><code>industry</code></td>
+<td>Banks</td>
+<td></td>
+</tr>
+<tr>
+<td><code>entry_date</code></td>
+<td>2024-08-19</td>
+<td></td>
+</tr>
+<tr>
+<td><code>exit_date</code></td>
+<td>2024-08-26</td>
+<td></td>
+</tr>
+<tr>
+<td><code>direction</code></td>
+<td>short_spread</td>
+<td></td>
+</tr>
+<tr>
+<td><code>entry_z</code></td>
+<td>+2.41</td>
+<td></td>
+</tr>
+<tr>
+<td><code>exit_z</code></td>
+<td>+0.31</td>
+<td></td>
+</tr>
+<tr>
+<td><code>hedge_ratio</code></td>
+<td>1.121</td>
+<td></td>
+</tr>
+<tr>
+<td><code>entry_price_A</code></td>
+<td>162.34</td>
+<td></td>
+</tr>
+<tr>
+<td><code>entry_price_B</code></td>
+<td>39.20</td>
+<td></td>
+</tr>
+<tr>
+<td><code>exit_price_A</code></td>
+<td>159.12</td>
+<td></td>
+</tr>
+<tr>
+<td><code>exit_price_B</code></td>
+<td>39.81</td>
+<td></td>
+</tr>
+<tr>
+<td><code>shares_A</code></td>
+<td>−61</td>
+<td>short ~$10k of PNC</td>
+</tr>
+<tr>
+<td><code>shares_B</code></td>
+<td>+286</td>
+<td>long ~$10k × 1.121 of TFC</td>
+</tr>
+<tr>
+<td><code>pnl</code></td>
+<td>+371.21</td>
+<td></td>
+</tr>
+<tr>
+<td><code>return_pct</code></td>
+<td>+0.0186</td>
+<td></td>
+</tr>
+<tr>
+<td><code>holding_days</code></td>
+<td>5</td>
+<td></td>
+</tr>
+<tr>
+<td><code>fate</code></td>
+<td>success</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Numbers are illustrative — see <code>outputs/trades.csv</code> for the actual blotter.</p>
+</section>
+<section class="doc-section" id="11_performance_metrics">
+  <h1 class="section-title">11. Performance Metrics</h1>
+  <p>All numbers below are computed by <code>src/metrics.py</code> from <code>trades.csv</code> and
+<code>ledger.csv</code> over the full backtest window (2023-05-02 to 2026-04-30).</p>
+<h2>11.1 Selection results (10 rows, one per industry)</h2>
+<table>
+<thead>
+<tr>
+<th>Industry</th>
+<th>Pair</th>
+<th style="text-align: right;">Correlation</th>
+<th style="text-align: right;">Coint p-value</th>
+<th style="text-align: right;">ADF p-value</th>
+<th style="text-align: right;">Hedge Ratio</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Airlines</td>
+<td>AAL / JBLU</td>
+<td style="text-align: right;">0.560</td>
+<td style="text-align: right;">0.136</td>
+<td style="text-align: right;">0.046</td>
+<td style="text-align: right;">0.529</td>
+<td>rejected</td>
+</tr>
+<tr>
+<td>Autos</td>
+<td>F / GM</td>
+<td style="text-align: right;">0.671</td>
+<td style="text-align: right;">0.211</td>
+<td style="text-align: right;">0.080</td>
+<td style="text-align: right;">0.091</td>
+<td>rejected</td>
+</tr>
+<tr>
+<td>Banks</td>
+<td>PNC / TFC</td>
+<td style="text-align: right;">0.821</td>
+<td style="text-align: right;">0.0001</td>
+<td style="text-align: right;">0.00001</td>
+<td style="text-align: right;">1.121</td>
+<td><strong>selected</strong></td>
+</tr>
+<tr>
+<td>Beverages</td>
+<td>PEP / STZ</td>
+<td style="text-align: right;">0.428</td>
+<td style="text-align: right;">0.163</td>
+<td style="text-align: right;">0.057</td>
+<td style="text-align: right;">0.321</td>
+<td>rejected</td>
+</tr>
+<tr>
+<td>Communication</td>
+<td>META / NFLX</td>
+<td style="text-align: right;">0.304</td>
+<td style="text-align: right;">0.063</td>
+<td style="text-align: right;">0.018</td>
+<td style="text-align: right;">0.800</td>
+<td>rejected</td>
+</tr>
+<tr>
+<td>Energy</td>
+<td>COP / OXY</td>
+<td style="text-align: right;">0.798</td>
+<td style="text-align: right;">0.018</td>
+<td style="text-align: right;">0.004</td>
+<td style="text-align: right;">0.634</td>
+<td><strong>selected</strong></td>
+</tr>
+<tr>
+<td>HealthCare</td>
+<td>PFE / BIIB</td>
+<td style="text-align: right;">0.442</td>
+<td style="text-align: right;">0.065</td>
+<td style="text-align: right;">0.018</td>
+<td style="text-align: right;">0.436</td>
+<td>rejected</td>
+</tr>
+<tr>
+<td>Payments</td>
+<td>V / MA</td>
+<td style="text-align: right;">0.851</td>
+<td style="text-align: right;">0.238</td>
+<td style="text-align: right;">0.094</td>
+<td style="text-align: right;">1.027</td>
+<td>rejected</td>
+</tr>
+<tr>
+<td>Retail</td>
+<td>DG / DLTR</td>
+<td style="text-align: right;">0.494</td>
+<td style="text-align: right;">0.001</td>
+<td style="text-align: right;">0.0002</td>
+<td style="text-align: right;">0.979</td>
+<td>rejected</td>
+</tr>
+<tr>
+<td>Semiconductors</td>
+<td>MU / LRCX</td>
+<td style="text-align: right;">0.742</td>
+<td style="text-align: right;">0.012</td>
+<td style="text-align: right;">0.002</td>
+<td style="text-align: right;">1.343</td>
+<td><strong>selected</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Three industries pass all three filters. Notable rejections:
+- <strong>V / MA</strong> has the highest correlation in the table (0.85) but fails the
+  cointegration test (p = 0.24). High correlation alone is not enough.
+- <strong>DG / DLTR</strong> has very strong cointegration evidence but borderline
+  correlation (0.49 &lt; 0.50). We keep the threshold strict to avoid trading
+  pairs that are statistically related but practically unstable.</p>
+<h2>11.2 Aggregate trade statistics (3 selected pairs)</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Number of trades</td>
+<td>68</td>
+</tr>
+<tr>
+<td>Average return per trade</td>
+<td>0.85%</td>
+</tr>
+<tr>
+<td>Average holding period</td>
+<td>9.07 days</td>
+</tr>
+<tr>
+<td>Success rate</td>
+<td>45.6%</td>
+</tr>
+<tr>
+<td>Stop-loss rate</td>
+<td>38.2%</td>
+</tr>
+<tr>
+<td>Timeout rate</td>
+<td>16.2%</td>
+</tr>
+<tr>
+<td>End-of-backtest close rate</td>
+<td>0.0%</td>
+</tr>
+</tbody>
+</table>
+<h2>11.3 Aggregate portfolio statistics (3 selected pairs)</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sharpe ratio (ann.)</td>
+<td>1.45</td>
+</tr>
+<tr>
+<td>Annualized return</td>
+<td>1.30%</td>
+</tr>
+<tr>
+<td>Annualized volatility</td>
+<td>0.89%</td>
+</tr>
+<tr>
+<td>Total return</td>
+<td>3.92%</td>
+</tr>
+<tr>
+<td>Max drawdown</td>
+<td>-0.85%</td>
+</tr>
+</tbody>
+</table>
+<h2>11.4 Per-pair contribution</h2>
+<table>
+<thead>
+<tr>
+<th>Industry</th>
+<th>Pair</th>
+<th style="text-align: right;">Trades</th>
+<th style="text-align: right;">Success</th>
+<th style="text-align: right;">Stop-loss</th>
+<th style="text-align: right;">Timeout</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Banks</td>
+<td>PNC / TFC</td>
+<td style="text-align: right;">20</td>
+<td style="text-align: right;">50.0%</td>
+<td style="text-align: right;">30.0%</td>
+<td style="text-align: right;">20.0%</td>
+</tr>
+<tr>
+<td>Energy</td>
+<td>COP / OXY</td>
+<td style="text-align: right;">22</td>
+<td style="text-align: right;">50.0%</td>
+<td style="text-align: right;">27.3%</td>
+<td style="text-align: right;">22.7%</td>
+</tr>
+<tr>
+<td>Semiconductors</td>
+<td>MU / LRCX</td>
+<td style="text-align: right;">26</td>
+<td style="text-align: right;">38.5%</td>
+<td style="text-align: right;">53.8%</td>
+<td style="text-align: right;">7.7%</td>
+</tr>
+</tbody>
+</table>
+<p>Banks and Energy contribute clean, balanced profiles. Semiconductors is the
+highest-frequency, lowest-quality pair in this run - 53.8% of MU / LRCX trades
+hit the stop-loss, and this is the pair to watch most closely going forward.</p>
+<h2>11.5 Interpreting the numbers</h2>
+<ul>
+<li><strong>Sharpe of 1.45</strong> is solid for a market-neutral pair-trading strategy. The
+  realized volatility (0.89% ann.) is low because each pair is dollar-neutral
+  and the three pairs are largely uncorrelated.</li>
+<li><strong>Total return of 3.92%</strong> over 3 years is modest in absolute terms, but the
+  capital efficiency (low gross book size: $30k notional out of $300k cash)
+  means the per-dollar-deployed return is meaningfully higher.</li>
+<li><strong>Max drawdown of -0.85%</strong> is small. With three uncorrelated pairs, even
+  simultaneous adverse moves rarely accumulate.</li>
+<li>The ratio of <strong>stop-loss to success (0.84:1)</strong> is on the higher side and is
+  the main quality concern. The live monitor described in section 16 is set
+  up specifically to catch a deterioration in this ratio.</li>
+</ul>
+</section>
+<section class="doc-section" id="12_strategy_monitoring">
+  <h1 class="section-title">12. Strategy Monitoring</h1>
+  <p>The backtest gives us a distribution of expected outcomes. In live trading, we
+compare realized behavior against that distribution and ask: <strong>is the strategy
+still doing what the backtest said it would do?</strong></p>
+<h2>12.1 What we monitor (and how often)</h2>
+<p>Monthly cadence, computed from the production blotter:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th style="text-align: right;">Backtest value</th>
+<th>Watch band</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sharpe (ann., trailing 6 months)</td>
+<td style="text-align: right;">1.45</td>
+<td>flag if &lt; 0.5 for 2 consecutive months</td>
+</tr>
+<tr>
+<td>Average return per trade</td>
+<td style="text-align: right;">0.85%</td>
+<td>flag if rolling 20-trade mean &lt; 0</td>
+</tr>
+<tr>
+<td>Success rate</td>
+<td style="text-align: right;">45.6%</td>
+<td>flag if rolling 20-trade rate &lt; 30%</td>
+</tr>
+<tr>
+<td>Stop-loss rate</td>
+<td style="text-align: right;">38.2%</td>
+<td>flag if rolling 20-trade rate &gt; 55%</td>
+</tr>
+<tr>
+<td>Timeout rate</td>
+<td style="text-align: right;">16.2%</td>
+<td>flag if rolling 20-trade rate &gt; 35%</td>
+</tr>
+<tr>
+<td>Average holding days</td>
+<td style="text-align: right;">9.07</td>
+<td>flag if rolling 20-trade mean &gt; 18 days</td>
+</tr>
+<tr>
+<td>Max drawdown</td>
+<td style="text-align: right;">-0.85%</td>
+<td>flag if live drawdown &lt; -1.3% (1.5x)</td>
+</tr>
+</tbody>
+</table>
+<p>Daily cadence, computed from the production ledger:</p>
+<ul>
+<li>Live drawdown vs. running peak.</li>
+<li>Open-position count vs. expected (one per pair).</li>
+<li>Spread Z-score per pair (so we can see entries forming).</li>
+</ul>
+<h2>12.2 Per-pair sanity checks</h2>
+<p>Every weekend (or on the last day of each month), we re-run the screening
+calculations on the trailing 12 months of data <strong>for each pair currently in
+production</strong>:</p>
+<ul>
+<li>The rolling daily-return correlation, with a warning if it falls below 0.30.</li>
+<li>The rolling Engle-Granger cointegration p-value, with a warning if it stays
+  above 0.10 for two consecutive monthly checks.</li>
+<li>The ADF p-value on the spread, with a warning if it stays above 0.10 for two
+  consecutive monthly checks.</li>
+</ul>
+<p>These are the same tests used at selection time, applied to the most recent
+window. If a pair's underlying statistical evidence has deteriorated, the live
+trade behavior may not have caught up yet — but the next few trades almost
+certainly will, so we want the early signal.</p>
+<h2>12.3 Reporting</h2>
+<p>A weekly status note records:</p>
+<ol>
+<li>Current open positions (pair, direction, days held, current Z-score, MTM
+   P&amp;L).</li>
+<li>Trades closed since the previous report and their fates.</li>
+<li>Trailing-month Sharpe, success rate, stop-loss rate, timeout rate.</li>
+<li>Drawdown vs. peak.</li>
+<li>Per-pair trailing 12-month correlation, cointegration p-value, ADF p-value.</li>
+<li>Any flags raised by the watch bands above.</li>
+</ol>
+<p>This is the input that feeds the section 16 stop-trading decision.</p>
+</section>
+<section class="doc-section" id="13_when_strategy_stops_working">
+  <h1 class="section-title">13. When the Strategy Stops Working</h1>
+  <p>A pair-trading strategy stops working when the <strong>statistical relationship
+between the two stocks breaks down</strong>. This can happen for many reasons:
+M&amp;A activity, a major change in business mix, divergent management decisions,
+a regulatory shock that hits one firm but not the other, or simply a structural
+break in market regime. We do not need to identify the cause to react — we
+need a clear rule for stepping back.</p>
+<h2>13.1 Per-pair stop-trading conditions</h2>
+<p>We <strong>suspend new entries</strong> on a pair if any one of the following is true:</p>
+<ol>
+<li>Trailing 12-month return correlation falls below 0.30 for two consecutive
+   monthly checks.</li>
+<li>Trailing 12-month Engle-Granger cointegration p-value stays above 0.10
+   for two consecutive monthly checks.</li>
+<li>ADF p-value on the spread stays above 0.10 for two consecutive monthly
+   checks.</li>
+<li>Rolling 20-trade success rate drops below 23% (50% of the backtest 45.6%).</li>
+<li>Rolling 20-trade stop-loss rate exceeds 55%.</li>
+<li>Three or more stop-losses occur within any 10 consecutive trading days.</li>
+</ol>
+<p>When suspended, we hold any existing open position to its natural exit (or to
+its stop-loss), then close the pair until the screening evidence recovers.</p>
+<h2>13.2 Portfolio-level stop conditions</h2>
+<p>We pause <strong>all new entries</strong> across all pairs if:</p>
+<ol>
+<li>Live drawdown exceeds -1.3% (1.5x the backtest max drawdown of -0.85%).</li>
+<li>Two consecutive monthly Sharpe ratios fall below 0.5.</li>
+<li>Aggregate stop-loss rate over the trailing 60 trades exceeds 55%.</li>
+</ol>
+<p>This is a circuit breaker, not a kill switch. Open positions still exit
+according to the standing rules; we simply do not put on new exposure until
+the underlying signals look healthy again.</p>
+<h2>13.3 Resumption rule</h2>
+<p>A suspended pair is <strong>eligible for re-screening</strong> in the next monthly cycle.
+To resume trading the pair, the same statistical thresholds must be met on
+the trailing 12-month window: correlation of at least 0.50, cointegration
+p-value of at most 0.10, and ADF p-value of at most 0.10 on the spread.</p>
+<p>If a pair fails to re-qualify for two consecutive months, it is removed from
+the trading roster and the corresponding industry returns to the candidate
+pool for fresh selection.</p>
+<h2>13.4 What is NOT a stop signal</h2>
+<p>To avoid over-reacting, we deliberately do <strong>not</strong> treat any of the following
+as automatic stop signals:</p>
+<ul>
+<li>A single losing trade, even a large one.</li>
+<li>A single month of negative P&amp;L.</li>
+<li>An unusually wide Z-score on entry (this is the signal, not the failure).</li>
+<li>A change in the absolute price level of either leg.</li>
+</ul>
+<p>Pair trading is a tail-heavy strategy: the success-trade payoff distribution
+includes some that recover from very wide spreads. We need enough patience to
+let those resolve, while still cutting genuinely broken pairs quickly. The
+two-consecutive-month rule on statistical thresholds plus the trade-fate
+circuit breakers are calibrated to that tradeoff.</p>
+</section>
+      </div>
+      <footer class="site-footer">
+        Pair Trading Across 10 Industries &mdash; FinTech 533 Capstone &middot; Peiyuan Shan &middot; Linghang Xue &middot; Supawich Puengdang
+      </footer>
+    </main>
+  </div>
+  <script>
+(function() {
+  // --- mobile menu toggle ---
+  var btn = document.getElementById('menu-toggle');
+  var sidebar = document.querySelector('aside.sidebar');
+  if (btn && sidebar) {
+    btn.addEventListener('click', function() {
+      sidebar.classList.toggle('open');
+    });
+    sidebar.querySelectorAll('a').forEach(function(a) {
+      a.addEventListener('click', function() {
+        if (window.innerWidth <= 900) sidebar.classList.remove('open');
+      });
+    });
+  }
+
+  // --- scrollspy: highlight active section in sidebar ---
+  var sections = Array.prototype.slice.call(document.querySelectorAll('section.doc-section'));
+  var links = {};
+  document.querySelectorAll('aside.sidebar nav a[href^="#"]').forEach(function(a) {
+    var id = a.getAttribute('href').slice(1);
+    links[id] = a;
+  });
+  function setActive(id) {
+    Object.keys(links).forEach(function(k) { links[k].classList.remove('active'); });
+    if (id && links[id]) links[id].classList.add('active');
+  }
+  function onScroll() {
+    var scrollPos = window.scrollY + 120;
+    var current = sections[0] ? sections[0].id : null;
+    for (var i = 0; i < sections.length; i++) {
+      if (sections[i].offsetTop <= scrollPos) current = sections[i].id;
+    }
+    setActive(current);
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('load', onScroll);
+})();
+</script>
+</body>
+</html>
