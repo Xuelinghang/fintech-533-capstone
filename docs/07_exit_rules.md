@@ -53,3 +53,5 @@ simply remain open into the next session.
 Roughly half of trades exit cleanly via mean reversion; about 38% are stopped
 out. Stop-loss frequency is something we monitor closely - a sustained rise in
 that rate is one of the early warning signals described in section 16.
+
+![Annotated PNC/TFC Z-score over a representative 90-day window, with entry circles and exit markers shaped and colored by fate (success, stop-loss, timeout)](figures/annotated_trades.svg)
