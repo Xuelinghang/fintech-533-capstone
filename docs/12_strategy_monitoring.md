@@ -54,3 +54,5 @@ A weekly status note records:
 6. Any flags raised by the watch bands above.
 
 This is the input that feeds the section 16 stop-trading decision.
+
+![Rolling 20-trade diagnostics over the backtest: trailing Sharpe, success rate, and stop-loss rate, each annotated with the watch-band threshold from the monitoring framework](figures/rolling_metrics.svg)
