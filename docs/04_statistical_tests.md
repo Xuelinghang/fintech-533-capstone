@@ -57,3 +57,5 @@ test. The two stocks move together day-to-day, but their long-run spread is
 not stationary in the test window. Trading the spread of such a pair would be
 exposed to permanent drift, which is exactly what the cointegration test is
 designed to filter out.
+
+![Scatter of 386 candidate pairs by daily-return correlation vs. Engle–Granger cointegration p-value (log scale), with the three selected pairs marked in green and V/MA highlighted as the cautionary high-correlation/failed-cointegration example](figures/screening_scatter.svg)
