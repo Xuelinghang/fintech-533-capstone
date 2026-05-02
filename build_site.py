@@ -237,6 +237,19 @@ blockquote {
   color: var(--muted);
 }
 
+/* ---------- figures ---------- */
+main img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 22px auto 6px;
+}
+main p:has(> img) {
+  text-align: center;
+  margin: 0;
+}
+
+
 /* ---------- hero / KPIs on first section ---------- */
 .hero {
   padding: 28px 0 8px;
