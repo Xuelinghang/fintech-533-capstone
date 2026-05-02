@@ -72,3 +72,7 @@ hit the stop-loss, and this is the pair to watch most closely going forward.
 - The ratio of **stop-loss to success (0.84:1)** is on the higher side and is
   the main quality concern. The live monitor described in section 16 is set
   up specifically to catch a deterioration in this ratio.
+
+![Histogram of per-trade returns stacked by fate, showing the asymmetry between winning and losing trade magnitudes](figures/return_distribution.svg)
+
+![Underwater drawdown curve over the full 2023–2026 backtest, with maximum drawdown labeled](figures/drawdown_underwater.svg)
