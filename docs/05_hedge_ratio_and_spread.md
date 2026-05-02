@@ -44,3 +44,5 @@ This keeps the spread position approximately neutral with respect to the common
 factor that drives both stocks. Both legs round to the nearest whole share; any
 small remaining residual exposure is recorded in the ledger and absorbed into
 the cash account.
+
+![Three-panel chart for the PNC/TFC pair: log prices of both legs, the constructed spread with its 60-day rolling mean, and the rolling Z-score with horizontal threshold lines at ±0.5, ±2, and ±3](figures/pair_panel_pnc_tfc.svg)
