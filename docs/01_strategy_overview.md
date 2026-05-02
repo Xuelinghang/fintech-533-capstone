@@ -59,3 +59,5 @@ Aggregate backtest performance (3 selected pairs, equal-notional):
 - Total return: 3.92%
 - Max drawdown: -0.85%
 - Success rate: 45.6%, stop-loss rate: 38.2%, timeout rate: 16.2%
+
+![Aggregate equity curve and drawdown for the three selected pairs over the 2023–2026 backtest window](figures/equity_curve.svg)
