@@ -44,3 +44,5 @@ distributions, and they age very differently in production:
 
 We therefore monitor success / stop-loss / timeout shares as primary live
 diagnostics, alongside Sharpe and drawdown.
+
+![Stacked horizontal bar chart of trade fate distribution per pair, showing success / stop-loss / timeout shares](figures/fate_stacked_bar.svg)
